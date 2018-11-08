@@ -1,7 +1,7 @@
 package physicsnet
 
 // Creator - функция создания объекта
-type Creator func(props interface{}) interface{}
+type Creator func(data interface{}) interface{}
 
 // Registrator - паттерн регистратора
 type Registrator map[string]Creator

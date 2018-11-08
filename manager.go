@@ -22,18 +22,20 @@ func createManager(es entitiesSynchronizer) manager {
 	}
 }
 
-func (m *manager) create(props createProps) interface{} {
-	result := m.factory.create(props.Type, props.Data)
+func (m *manager) create(id string, t string, data interface{}) interface{} {
+	result := m.factory.create(t, data)
 	if result != nil {
-		item := managerItem{t: props.Type, props: props, result: result}
-		m.store[props.ID] = item
-		m.createSynchronizer.sync(item.props)
+		props := createProps{ID: id, Type: t, Data: data}
+		item := managerItem{t: t, props: props, result: result}
+		m.store[id] = item
+		m.createSynchronizer.sync(data)
 	}
 	return result
 }
 
-func (m *manager) destroy(props destroyProps) {
-	delete(m.store, props.ID)
+func (m *manager) destroy(id string) {
+	delete(m.store, id)
+	props := destroyProps{ID: id}
 	m.destroySynchronizer.sync(props)
 }
 

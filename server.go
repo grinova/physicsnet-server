@@ -30,12 +30,16 @@ type ServerListener struct {
 type Server struct {
 	sync.RWMutex
 	clients
-	running      bool
-	ch           chan msg
-	listener     ServerListener
-	world        dynamic.World
-	bodies       manager
-	synchronizer contextSynchronizer
+	running            bool
+	ch                 chan msg
+	listener           ServerListener
+	world              dynamic.World
+	bodiesManager      manager
+	controllersManager manager
+	actorsManager      manager
+	actors             actors
+	synchronizer       contextSynchronizer
+	idGenerator        customIDGenerator
 }
 
 type client struct {
@@ -83,14 +87,22 @@ func (s *Server) Connect(conn *websocket.Conn) (string, error) {
 }
 
 // CreateEntity создаёт сущность заданного типа
-func (s *Server) CreateEntity(id string, t string, props interface{}) {
-	s.bodies.create(createProps{ID: id, Type: t, Data: props})
+func (s *Server) CreateEntity(id string, t string, bodyProps interface{}) {
+	s.bodiesManager.create(id, t, bodyProps)
+	if c, ok := s.controllersManager.create(id, t, nil).(Controller); ok {
+		if a, ok := s.actorsManager.create(id, t, nil).(Actor); ok {
+			s.idGenerator.id = id
+			s.actors.spawn(c, a)
+		}
+	}
 }
 
 // DestroyEntity уничтожает все сущности с идентификатором id
 func (s *Server) DestroyEntity(id string) {
-	if item, ok := s.bodies.store[id]; ok {
-		s.bodies.destroy(destroyProps{ID: id})
+	s.actorsManager.destroy(id)
+	s.controllersManager.destroy(id)
+	s.bodiesManager.destroy(id)
+	if item, ok := s.bodiesManager.store[id]; ok {
 		if body, ok := item.result.(*physics.Body); ok {
 			s.world.DestroyBody(body)
 		}
@@ -106,7 +118,17 @@ func (s *Server) Disconnect(id string) {
 
 // GetBodyRegistrator возвращает регистратор для тел
 func (s *Server) GetBodyRegistrator() Registrator {
-	return s.bodies.factory.Registrator
+	return s.bodiesManager.factory.Registrator
+}
+
+// GetControllerRegistrator возвращает регистратор для тел
+func (s *Server) GetControllerRegistrator() Registrator {
+	return s.controllersManager.factory.Registrator
+}
+
+// GetActorRegistrator возвращает регистратор для тел
+func (s *Server) GetActorRegistrator() Registrator {
+	return s.actorsManager.factory.Registrator
 }
 
 // GetWorld возвращает мир
@@ -189,11 +211,15 @@ func (s *Server) onMessage(m msg) bool {
 }
 
 func (s *Server) onEvent(id string, data interface{}) bool {
-	data, ok := data.(map[string]interface{})
-	if !ok {
-		return false
+	if data, ok := data.(map[string]interface{}); ok {
+		if s.listener.OnEventMessage != nil && !s.listener.OnEventMessage(s, id, data) {
+			return false
+		}
+		if id, ok := data["id"].(string); ok {
+			s.actors.send(id, data["data"])
+		}
 	}
-	return s.listener.OnEventMessage == nil || s.listener.OnEventMessage(s, id, data)
+	return true
 }
 
 func (s *Server) onSystem(id string, data interface{}) bool {
@@ -205,8 +231,10 @@ func (s *Server) onStep(d time.Duration) {
 }
 
 func (s *Server) sync(c client) {
-	s.synchronizer.context(clientSynchronizer{client: c}, func() {
-		s.bodies.sync()
+	s.synchronizer.with(clientSynchronizer{client: c}, func() {
+		s.bodiesManager.sync()
+		s.controllersManager.sync()
+		s.actorsManager.sync()
 	})
 }
 
@@ -262,6 +290,8 @@ func (s *Server) reset() {
 	s.world = dynamic.CreateWorld()
 	s.synchronizer = contextSynchronizer{synchronizer: broadcastSynchronizer{client: &s.clients}}
 	manageSynchronizer := manageSynchronizer{parent: s.synchronizer}
-	bodiesSynchronizer := entitiesSynchronizer{id: "bodies", parent: manageSynchronizer}
-	s.bodies = createManager(bodiesSynchronizer)
+	s.bodiesManager = createManager(entitiesSynchronizer{id: "bodies", parent: manageSynchronizer})
+	s.controllersManager = createManager(entitiesSynchronizer{id: "controllers", parent: manageSynchronizer})
+	s.actorsManager = createManager(entitiesSynchronizer{id: "actors", parent: manageSynchronizer})
+	s.actors = createActors(&s.idGenerator)
 }

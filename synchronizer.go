@@ -8,7 +8,7 @@ type contextSynchronizer struct {
 	synchronizer
 }
 
-func (s contextSynchronizer) context(sc synchronizer, f func()) {
+func (s contextSynchronizer) with(sc synchronizer, f func()) {
 	if sc != nil && f != nil {
 		backupSynchronizer := s.synchronizer
 		s.synchronizer = sc

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
+	"github.com/grinova/actors"
 	"github.com/grinova/classic2d/physics"
 	"github.com/grinova/classic2d/physics/shapes"
 	"github.com/grinova/classic2d/vmath"
@@ -13,6 +15,46 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+const (
+	shipMaxForce         = 0.1
+	shipMaxTorque        = 5
+	shipDumpRotationCoef = 0.97
+)
+
+type shipController struct {
+	thrust float64
+	torque float64
+}
+
+func (c shipController) Step(body *physics.Body, d time.Duration) {
+	force := vmath.Vec2{X: 0, Y: c.thrust}
+	force.Rotate(body.GetRot())
+	body.ApplyForce(force.Mul(shipMaxForce))
+	body.SetTorque(c.torque * shipMaxTorque)
+	body.AngularVelocity *= shipDumpRotationCoef
+}
+
+func createShipController(v interface{}) interface{} {
+	return shipController{}
+}
+
+func createShipActor(v interface{}) interface{} {
+	return physicsnet.Actor{
+		OnMessage: func(c physicsnet.Controller, m actors.Message, send actors.Send, spawn actors.Spawn, exit actors.Exit) {
+			if ship, ok := c.(shipController); ok {
+				if msg, ok := m.(map[string]interface{}); ok {
+					switch msg["type"] {
+					case "thrust":
+						if thrust, ok := msg["amount"].(float64); ok {
+							ship.thrust = thrust
+						}
+					}
+				}
+			}
+		},
+	}
+}
 
 // UserData - данные тела
 type UserData struct {
@@ -70,6 +112,8 @@ func main() {
 				}
 				return nil
 			})
+			s.GetControllerRegistrator().Register("ship", createShipController)
+			s.GetActorRegistrator().Register("ship", createShipActor)
 			s.CreateEntity("arena", "arena", physicsnet.BodyProps{})
 			log.Println("Server start")
 		},

@@ -4,10 +4,10 @@ type factory struct {
 	Registrator
 }
 
-func (f factory) create(t string, props interface{}) interface{} {
+func (f factory) create(t string, data interface{}) interface{} {
 	creator, ok := f.Registrator[t]
 	if !ok {
 		return nil
 	}
-	return creator(props)
+	return creator(data)
 }
