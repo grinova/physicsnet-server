@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/grinova/actors"
-	"github.com/grinova/classic2d/physics"
-	"github.com/grinova/classic2d/physics/shapes"
-	"github.com/grinova/classic2d/vmath"
-	"github.com/grinova/physicsnet"
+	"github.com/grinova/classic2d-server/physics"
+	"github.com/grinova/classic2d-server/physics/shapes"
+	"github.com/grinova/classic2d-server/vmath"
+	physicsnet "github.com/grinova/physicsnet-server"
 
 	"github.com/gorilla/websocket"
 )

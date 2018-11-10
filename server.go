@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grinova/classic2d/dynamic"
-	"github.com/grinova/classic2d/physics"
+	"github.com/grinova/classic2d-server/dynamic"
+	"github.com/grinova/classic2d-server/physics"
 
 	"github.com/gorilla/websocket"
 )

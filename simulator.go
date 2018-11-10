@@ -3,7 +3,7 @@ package physicsnet
 import (
 	"time"
 
-	"github.com/grinova/classic2d/physics"
+	"github.com/grinova/classic2d-server/physics"
 )
 
 type simulator struct {

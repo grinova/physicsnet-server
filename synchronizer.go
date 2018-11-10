@@ -1,6 +1,6 @@
 package physicsnet
 
-import "github.com/grinova/classic2d/physics"
+import "github.com/grinova/classic2d-server/physics"
 
 type synchronizer interface {
 	sync(v interface{})
