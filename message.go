@@ -5,7 +5,7 @@ type message struct {
 	Data interface{} `json:"data"`
 }
 
-type manageCommand struct {
+type commandProps struct {
 	ID   string      `json:"id"`
 	Data interface{} `json:"data"`
 }
@@ -43,14 +43,16 @@ type actorProps struct {
 	ID   string `json:"id"`
 }
 
-type synchProps struct {
-	Type string     `json:"type"`
-	Data bodiesSync `json:"data"`
+type syncProps struct {
+	ID   string      `json:"id"`
+	Data interface{} `json:"data"`
 }
 
 type bodiesSync map[string]bodySyncProps
 
 type bodySyncProps struct {
-	Position Point   `json:"position"`
-	Angle    float64 `json:"angle"`
+	Position        Point   `json:"position"`
+	Angle           float64 `json:"angle"`
+	LinearVelocity  Point   `json:"linear"`
+	AngularVelocity float64 `json:"angular"`
 }

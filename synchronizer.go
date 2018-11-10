@@ -53,7 +53,7 @@ type entitiesSynchronizer struct {
 }
 
 func (s entitiesSynchronizer) sync(v interface{}) {
-	s.parent.sync(manageCommand{ID: s.id, Data: v})
+	s.parent.sync(commandProps{ID: s.id, Data: v})
 }
 
 type createSynchronizer struct {
@@ -91,9 +91,14 @@ func (s bodiesSynchronizer) sync() {
 		if body, ok := item.result.(*physics.Body); ok {
 			position := body.GetPosition()
 			angle := body.GetAngle()
-			props := bodySyncProps{Position: Point{X: position.X, Y: position.Y}, Angle: angle}
+			props := bodySyncProps{
+				Position:        Point{X: position.X, Y: position.Y},
+				Angle:           angle,
+				LinearVelocity:  Point{X: body.LinearVelocity.X, Y: body.LinearVelocity.Y},
+				AngularVelocity: body.AngularVelocity,
+			}
 			bodiesSync[id] = props
 		}
 	}
-	s.parent.sync(bodiesSync)
+	s.parent.sync(syncProps{ID: "default", Data: bodiesSync})
 }

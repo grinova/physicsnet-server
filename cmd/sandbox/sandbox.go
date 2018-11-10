@@ -28,8 +28,7 @@ type shipController struct {
 }
 
 func (c *shipController) Step(body *physics.Body, d time.Duration) {
-	force := vmath.Vec2{X: 0, Y: c.thrust}
-	force.Rotate(body.GetRot())
+	force := vmath.Vec2{X: 0, Y: c.thrust}.Rotate(body.GetRot())
 	body.ApplyForce(force.Mul(shipMaxForce))
 	body.SetTorque(c.torque * shipMaxTorque)
 	body.AngularVelocity *= shipDumpRotationCoef

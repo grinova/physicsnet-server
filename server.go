@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultStepDuration = time.Second / 60
-	defaultSyncDuration = time.Second
+	defaultSyncDuration = time.Second / 10
 )
 
 // ServerListener - интерфейс событий сервера
