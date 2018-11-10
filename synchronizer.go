@@ -1,5 +1,7 @@
 package physicsnet
 
+import "github.com/grinova/classic2d/physics"
+
 type synchronizer interface {
 	sync(v interface{})
 }
@@ -68,4 +70,30 @@ type destroySynchronizer struct {
 
 func (s destroySynchronizer) sync(v interface{}) {
 	s.parent.sync(entityRoute{Type: "destroy", Data: v})
+}
+
+type syncSynchronizer struct {
+	parent broadcastSynchronizer
+}
+
+func (s syncSynchronizer) sync(v interface{}) {
+	s.parent.sync(message{Type: "sync", Data: v})
+}
+
+type bodiesSynchronizer struct {
+	parent  syncSynchronizer
+	manager *manager
+}
+
+func (s bodiesSynchronizer) sync() {
+	bodiesSync := make(bodiesSync)
+	for id, item := range s.manager.store {
+		if body, ok := item.result.(*physics.Body); ok {
+			position := body.GetPosition()
+			angle := body.GetAngle()
+			props := bodySyncProps{Position: Point{X: position.X, Y: position.Y}, Angle: angle}
+			bodiesSync[id] = props
+		}
+	}
+	s.parent.sync(bodiesSync)
 }

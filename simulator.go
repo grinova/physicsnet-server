@@ -10,6 +10,10 @@ type simulator struct {
 	store map[Controller]*physics.Body
 }
 
+func createSimulator() simulator {
+	return simulator{store: make(map[Controller]*physics.Body)}
+}
+
 func (s simulator) add(body *physics.Body, c Controller) {
 	s.store[c] = body
 }

@@ -27,7 +27,7 @@ type shipController struct {
 	torque float64
 }
 
-func (c shipController) Step(body *physics.Body, d time.Duration) {
+func (c *shipController) Step(body *physics.Body, d time.Duration) {
 	force := vmath.Vec2{X: 0, Y: c.thrust}
 	force.Rotate(body.GetRot())
 	body.ApplyForce(force.Mul(shipMaxForce))
@@ -36,18 +36,22 @@ func (c shipController) Step(body *physics.Body, d time.Duration) {
 }
 
 func createShipController(v interface{}) interface{} {
-	return shipController{}
+	return &shipController{}
 }
 
 func createShipActor(v interface{}) interface{} {
 	return physicsnet.Actor{
 		OnMessage: func(c physicsnet.Controller, m actors.Message, send actors.Send, spawn actors.Spawn, exit actors.Exit) {
-			if ship, ok := c.(shipController); ok {
+			if ship, ok := c.(*shipController); ok {
 				if msg, ok := m.(map[string]interface{}); ok {
 					switch msg["type"] {
 					case "thrust":
 						if thrust, ok := msg["amount"].(float64); ok {
 							ship.thrust = thrust
+						}
+					case "torque":
+						if torque, ok := msg["amount"].(float64); ok {
+							ship.torque = torque
 						}
 					}
 				}
@@ -62,13 +66,13 @@ type UserData struct {
 	ID   string
 }
 
-var shipProps = map[string]physicsnet.BodyProps{
-	"ship-a": physicsnet.BodyProps{
+var shipProps = map[string]physicsnet.BodyCreateProps{
+	"ship-a": physicsnet.BodyCreateProps{
 		ID:       "ship-a",
 		Position: physicsnet.Point{X: -0.5, Y: -0.5},
 		Angle:    0,
 	},
-	"ship-b": physicsnet.BodyProps{
+	"ship-b": physicsnet.BodyCreateProps{
 		ID:       "ship-b",
 		Position: physicsnet.Point{X: 0.5, Y: 0.5},
 		Angle:    0,
@@ -97,7 +101,7 @@ func main() {
 				return body
 			})
 			s.GetBodyRegistrator().Register("ship", func(v interface{}) interface{} {
-				if props, ok := v.(physicsnet.BodyProps); ok {
+				if props, ok := v.(physicsnet.BodyCreateProps); ok {
 					RADIUS := 0.05
 					bodyDef := physics.BodyDef{
 						Position: vmath.Vec2{X: props.Position.X, Y: props.Position.Y},
@@ -114,7 +118,7 @@ func main() {
 			})
 			s.GetControllerRegistrator().Register("ship", createShipController)
 			s.GetActorRegistrator().Register("ship", createShipActor)
-			s.CreateEntity("arena", "arena", physicsnet.BodyProps{})
+			s.CreateEntity("arena", "arena", physicsnet.BodyCreateProps{})
 			log.Println("Server start")
 		},
 		OnServerStop: func(s *physicsnet.Server) {

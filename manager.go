@@ -39,6 +39,10 @@ func (m *manager) destroy(id string) {
 	m.destroySynchronizer.sync(props)
 }
 
+func (m *manager) get(id string) interface{} {
+	return m.store[id]
+}
+
 func (m *manager) sync() {
 	for _, item := range m.store {
 		m.createSynchronizer.sync(item.props)

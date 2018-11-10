@@ -14,6 +14,7 @@ import (
 
 const (
 	defaultStepDuration = time.Second / 60
+	defaultSyncDuration = time.Second
 )
 
 // ServerListener - интерфейс событий сервера
@@ -40,6 +41,8 @@ type Server struct {
 	actors             actors
 	synchronizer       contextSynchronizer
 	idGenerator        customIDGenerator
+	simulator
+	bodiesSynchronizer
 }
 
 type client struct {
@@ -87,12 +90,14 @@ func (s *Server) Connect(conn *websocket.Conn) (string, error) {
 }
 
 // CreateEntity создаёт сущность заданного типа
-func (s *Server) CreateEntity(id string, t string, bodyProps interface{}) {
-	s.bodiesManager.create(id, t, bodyProps)
-	if c, ok := s.controllersManager.create(id, t, nil).(Controller); ok {
-		if a, ok := s.actorsManager.create(id, t, nil).(Actor); ok {
-			s.idGenerator.id = id
-			s.actors.spawn(c, a)
+func (s *Server) CreateEntity(id string, t string, bodyCreateProps interface{}) {
+	if body, ok := s.bodiesManager.create(id, t, bodyCreateProps).(*physics.Body); ok {
+		if controller, ok := s.controllersManager.create(id, t, nil).(Controller); ok {
+			s.simulator.add(body, controller)
+			if a, ok := s.actorsManager.create(id, t, nil).(Actor); ok {
+				s.idGenerator.id = id
+				s.actors.spawn(controller, a)
+			}
 		}
 	}
 }
@@ -100,7 +105,10 @@ func (s *Server) CreateEntity(id string, t string, bodyProps interface{}) {
 // DestroyEntity уничтожает все сущности с идентификатором id
 func (s *Server) DestroyEntity(id string) {
 	s.actorsManager.destroy(id)
-	s.controllersManager.destroy(id)
+	if controller, ok := s.controllersManager.get(id).(Controller); ok {
+		s.controllersManager.destroy(id)
+		s.simulator.remove(controller)
+	}
 	s.bodiesManager.destroy(id)
 	if item, ok := s.bodiesManager.store[id]; ok {
 		if body, ok := item.result.(*physics.Body); ok {
@@ -227,7 +235,13 @@ func (s *Server) onSystem(id string, data interface{}) bool {
 }
 
 func (s *Server) onStep(d time.Duration) {
-	// s.world.Step(d.Seconds() / 1000)
+	s.world.ClearForces()
+	s.simulator.step(d)
+	s.world.Step(d)
+}
+
+func (s *Server) onSync() {
+	s.bodiesSynchronizer.sync()
 }
 
 func (s *Server) sync(c client) {
@@ -241,7 +255,10 @@ func (s *Server) sync(c client) {
 func (s *Server) loop(ch <-chan msg) {
 	running := true
 	past := time.Now()
-	ticker := time.NewTicker(defaultStepDuration)
+	stepTicker := time.NewTicker(defaultStepDuration)
+	syncTicker := time.NewTicker(defaultSyncDuration)
+	defer stepTicker.Stop()
+	defer syncTicker.Stop()
 	for running {
 		select {
 		case m, ok := <-ch:
@@ -250,12 +267,16 @@ func (s *Server) loop(ch <-chan msg) {
 			} else {
 				running = false
 			}
-		case _, ok := <-ticker.C:
+		case _, ok := <-stepTicker.C:
 			if ok {
 				now := time.Now()
 				duration := now.Sub(past)
 				past = now
 				s.onStep(duration)
+			}
+		case _, ok := <-syncTicker.C:
+			if ok {
+				s.onSync()
 			}
 		}
 	}
@@ -288,10 +309,14 @@ func (s *Server) reset() {
 	s.ch = make(chan msg)
 	s.running = true
 	s.world = dynamic.CreateWorld()
-	s.synchronizer = contextSynchronizer{synchronizer: broadcastSynchronizer{client: &s.clients}}
+	bs := broadcastSynchronizer{client: &s.clients}
+	s.synchronizer = contextSynchronizer{synchronizer: bs}
 	manageSynchronizer := manageSynchronizer{parent: s.synchronizer}
 	s.bodiesManager = createManager(entitiesSynchronizer{id: "bodies", parent: manageSynchronizer})
 	s.controllersManager = createManager(entitiesSynchronizer{id: "controllers", parent: manageSynchronizer})
 	s.actorsManager = createManager(entitiesSynchronizer{id: "actors", parent: manageSynchronizer})
 	s.actors = createActors(&s.idGenerator)
+	s.simulator = createSimulator()
+	ss := syncSynchronizer{parent: bs}
+	s.bodiesSynchronizer = bodiesSynchronizer{parent: ss, manager: &s.bodiesManager}
 }

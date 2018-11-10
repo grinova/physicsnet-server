@@ -25,8 +25,8 @@ type destroyProps struct {
 	ID string `json:"id"`
 }
 
-// BodyProps - свойства тела
-type BodyProps struct {
+// BodyCreateProps - свойства тела
+type BodyCreateProps struct {
 	ID       string  `json:"id"`
 	Position Point   `json:"position"`
 	Angle    float64 `json:"angle"`
@@ -41,4 +41,16 @@ type Point struct {
 type actorProps struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
+}
+
+type synchProps struct {
+	Type string     `json:"type"`
+	Data bodiesSync `json:"data"`
+}
+
+type bodiesSync map[string]bodySyncProps
+
+type bodySyncProps struct {
+	Position Point   `json:"position"`
+	Angle    float64 `json:"angle"`
 }
