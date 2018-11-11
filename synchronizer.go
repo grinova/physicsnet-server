@@ -10,7 +10,13 @@ type contextSynchronizer struct {
 	synchronizer
 }
 
-func (s contextSynchronizer) with(sc synchronizer, f func()) {
+func (s *contextSynchronizer) sync(v interface{}) {
+	if s.synchronizer != nil {
+		s.synchronizer.sync(v)
+	}
+}
+
+func (s *contextSynchronizer) with(sc synchronizer, f func()) {
 	if sc != nil && f != nil {
 		backupSynchronizer := s.synchronizer
 		s.synchronizer = sc

@@ -325,8 +325,8 @@ func (s *Server) reset() {
 	s.world = dynamic.CreateWorld()
 	s.broadcastSynchronizer = broadcastSynchronizer{client: &s.clients}
 	s.synchronizer = contextSynchronizer{synchronizer: s.broadcastSynchronizer}
-	s.eventSynchronizer = eventSynchronizer{parent: s.synchronizer}
-	manageSynchronizer := manageSynchronizer{parent: s.synchronizer}
+	s.eventSynchronizer = eventSynchronizer{parent: &s.synchronizer}
+	manageSynchronizer := manageSynchronizer{parent: &s.synchronizer}
 	s.bodiesManager = createManager(entitiesSynchronizer{id: "bodies", parent: manageSynchronizer})
 	s.controllersManager = createManager(entitiesSynchronizer{id: "controllers", parent: manageSynchronizer})
 	s.actorsManager = createManager(entitiesSynchronizer{id: "actors", parent: manageSynchronizer})
