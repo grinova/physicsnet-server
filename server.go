@@ -100,14 +100,9 @@ func (s *Server) Connect(conn *websocket.Conn) (string, error) {
 
 // CreateEntity создаёт сущность заданного типа
 func (s *Server) CreateEntity(id string, t string, bodyCreateProps interface{}) {
-	if body, ok := s.bodiesManager.create(id, t, bodyCreateProps).(*physics.Body); ok {
-		if controller, ok := s.controllersManager.create(id, t, nil).(Controller); ok {
-			s.simulator.add(body, controller)
-			if a, ok := s.actorsManager.create(id, t, nil).(Actor); ok {
-				s.idGenerator.id = id
-				s.actors.spawn(controller, a)
-			}
-		}
+	if actor, controller, ok := s.createActorController(id, t, bodyCreateProps); ok {
+		s.idGenerator.id = id
+		s.actors.spawn(controller, actor)
 	}
 }
 
@@ -233,7 +228,7 @@ func (s *Server) onEvent(id string, data interface{}) bool {
 			return false
 		}
 		if id, ok := data["id"].(string); ok {
-			s.actors.send(id, data["data"])
+			s.actors.Send(id, data["data"])
 		}
 		if c, ok := s.clients[id]; ok {
 			s.synchronizer.with(c.exceptSynchronizer, func() {
@@ -256,6 +251,25 @@ func (s *Server) onStep(d time.Duration) {
 
 func (s *Server) onSync() {
 	s.bodiesSynchronizer.sync()
+}
+
+func (s *Server) createActorController(id string, t string, props interface{}) (Actor, Controller, bool) {
+	if body, ok := s.bodiesManager.create(id, t, props).(*physics.Body); ok {
+		if controller, ok := s.controllersManager.create(id, t, nil).(Controller); ok {
+			s.simulator.add(body, controller)
+			if actor, ok := s.actorsManager.create(id, t, nil).(Actor); ok {
+				return actor, controller, true
+			}
+		}
+	}
+	return nil, nil, false
+}
+
+func (s *Server) createActorControllerSilent(id string, t string, props interface{}) (a Actor, c Controller, ok bool) {
+	s.synchronizer.with(nil, func() {
+		a, c, ok = s.createActorController(id, t, props)
+	})
+	return a, c, ok
 }
 
 func (s *Server) sync(c client) {
@@ -330,7 +344,7 @@ func (s *Server) reset() {
 	s.bodiesManager = createManager(entitiesSynchronizer{id: "bodies", parent: manageSynchronizer})
 	s.controllersManager = createManager(entitiesSynchronizer{id: "controllers", parent: manageSynchronizer})
 	s.actorsManager = createManager(entitiesSynchronizer{id: "actors", parent: manageSynchronizer})
-	s.actors = createActors(&s.idGenerator)
+	s.actors = createActors(&s.idGenerator, s.createActorControllerSilent)
 	s.simulator = createSimulator()
 	ss := syncSynchronizer{parent: s.broadcastSynchronizer}
 	s.bodiesSynchronizer = bodiesSynchronizer{parent: ss, manager: &s.bodiesManager}
