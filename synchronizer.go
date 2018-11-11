@@ -20,7 +20,7 @@ func (s contextSynchronizer) with(sc synchronizer, f func()) {
 }
 
 type clientSynchronizer struct {
-	client
+	*client
 }
 
 func (s clientSynchronizer) sync(v interface{}) {
@@ -34,6 +34,19 @@ type broadcastSynchronizer struct {
 func (s broadcastSynchronizer) sync(v interface{}) {
 	for _, client := range *s.client {
 		client.conn.WriteJSON(v)
+	}
+}
+
+type exceptSynchronizer struct {
+	broadcastSynchronizer
+	exceptID string
+}
+
+func (s exceptSynchronizer) sync(v interface{}) {
+	for id, client := range *s.client {
+		if id != s.exceptID {
+			client.conn.WriteJSON(v)
+		}
 	}
 }
 
@@ -101,4 +114,12 @@ func (s bodiesSynchronizer) sync() {
 		}
 	}
 	s.parent.sync(syncProps{ID: "default", Data: bodiesSync})
+}
+
+type eventSynchronizer struct {
+	parent synchronizer
+}
+
+func (s eventSynchronizer) sync(v interface{}) {
+	s.parent.sync(message{Type: "event", Data: v})
 }

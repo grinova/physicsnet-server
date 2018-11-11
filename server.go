@@ -42,11 +42,15 @@ type Server struct {
 	synchronizer       contextSynchronizer
 	idGenerator        customIDGenerator
 	simulator
+	broadcastSynchronizer broadcastSynchronizer
+	eventSynchronizer     eventSynchronizer
 	bodiesSynchronizer
 }
 
 type client struct {
-	conn *websocket.Conn
+	conn               *websocket.Conn
+	synchronizer       clientSynchronizer
+	exceptSynchronizer exceptSynchronizer
 }
 
 type clients map[string]client
@@ -83,6 +87,11 @@ func (s *Server) Connect(conn *websocket.Conn) (string, error) {
 		}
 	}
 	c := client{conn: conn}
+	c.synchronizer = clientSynchronizer{client: &c}
+	c.exceptSynchronizer = exceptSynchronizer{
+		broadcastSynchronizer: s.broadcastSynchronizer,
+		exceptID:              id,
+	}
 	s.clients[id] = c
 	s.sync(c)
 	go s.client(c, id, s.ch)
@@ -226,6 +235,11 @@ func (s *Server) onEvent(id string, data interface{}) bool {
 		if id, ok := data["id"].(string); ok {
 			s.actors.send(id, data["data"])
 		}
+		if c, ok := s.clients[id]; ok {
+			s.synchronizer.with(c.exceptSynchronizer, func() {
+				s.eventSynchronizer.sync(data)
+			})
+		}
 	}
 	return true
 }
@@ -245,7 +259,7 @@ func (s *Server) onSync() {
 }
 
 func (s *Server) sync(c client) {
-	s.synchronizer.with(clientSynchronizer{client: c}, func() {
+	s.synchronizer.with(c.synchronizer, func() {
 		s.bodiesManager.sync()
 		s.controllersManager.sync()
 		s.actorsManager.sync()
@@ -309,14 +323,15 @@ func (s *Server) reset() {
 	s.ch = make(chan msg)
 	s.running = true
 	s.world = dynamic.CreateWorld()
-	bs := broadcastSynchronizer{client: &s.clients}
-	s.synchronizer = contextSynchronizer{synchronizer: bs}
+	s.broadcastSynchronizer = broadcastSynchronizer{client: &s.clients}
+	s.synchronizer = contextSynchronizer{synchronizer: s.broadcastSynchronizer}
+	s.eventSynchronizer = eventSynchronizer{parent: s.synchronizer}
 	manageSynchronizer := manageSynchronizer{parent: s.synchronizer}
 	s.bodiesManager = createManager(entitiesSynchronizer{id: "bodies", parent: manageSynchronizer})
 	s.controllersManager = createManager(entitiesSynchronizer{id: "controllers", parent: manageSynchronizer})
 	s.actorsManager = createManager(entitiesSynchronizer{id: "actors", parent: manageSynchronizer})
 	s.actors = createActors(&s.idGenerator)
 	s.simulator = createSimulator()
-	ss := syncSynchronizer{parent: bs}
+	ss := syncSynchronizer{parent: s.broadcastSynchronizer}
 	s.bodiesSynchronizer = bodiesSynchronizer{parent: ss, manager: &s.bodiesManager}
 }
