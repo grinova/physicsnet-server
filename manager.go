@@ -28,7 +28,7 @@ func (m *manager) create(id string, t string, data interface{}) interface{} {
 		props := createProps{ID: id, Type: t, Data: data}
 		item := managerItem{t: t, props: props, result: result}
 		m.store[id] = item
-		m.createSynchronizer.sync(data)
+		m.createSynchronizer.sync(item.props)
 	}
 	return result
 }
