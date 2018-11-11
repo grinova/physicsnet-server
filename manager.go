@@ -40,7 +40,10 @@ func (m *manager) destroy(id string) {
 }
 
 func (m *manager) get(id string) interface{} {
-	return m.store[id]
+	if item, ok := m.store[id]; ok {
+		return item.result
+	}
+	return nil
 }
 
 func (m *manager) sync() {
