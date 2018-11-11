@@ -29,6 +29,7 @@ type ServerListener struct {
 
 // Server - сервер физики
 type Server struct {
+	Synchronization bool
 	sync.RWMutex
 	clients
 	running            bool
@@ -250,7 +251,9 @@ func (s *Server) onStep(d time.Duration) {
 }
 
 func (s *Server) onSync() {
-	s.bodiesSynchronizer.sync()
+	if s.Synchronization {
+		s.bodiesSynchronizer.sync()
+	}
 }
 
 func (s *Server) createActorController(id string, t string, props interface{}) (Actor, Controller, bool) {
