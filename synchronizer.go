@@ -17,7 +17,7 @@ func (s *contextSynchronizer) sync(v interface{}) {
 }
 
 func (s *contextSynchronizer) with(sc synchronizer, f func()) {
-	if sc != nil && f != nil {
+	if f != nil {
 		backupSynchronizer := s.synchronizer
 		s.synchronizer = sc
 		f()
