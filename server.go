@@ -14,14 +14,14 @@ import (
 
 const (
 	defaultStepDuration = time.Second / 60
-	defaultSyncDuration = time.Second / 10
+	defaultSyncDuration = time.Second / 5
 )
 
 // ServerListener - интерфейс событий сервера
 type ServerListener struct {
 	OnServerStart      func(s *Server)
 	OnServerStop       func(s *Server)
-	OnClientConnect    func(s *Server, id string) error
+	OnClientConnect    func(s *Server, id string, client *Client) error
 	OnClientDisconnect func(s *Server, id string)
 	OnEventMessage     func(s *Server, id string, data interface{}) bool
 	OnSystemMessage    func(s *Server, id string, data interface{}) bool
@@ -36,6 +36,7 @@ type Server struct {
 	ch                 chan msg
 	listener           ServerListener
 	world              dynamic.World
+	bodiesMap          bodiesMap
 	bodiesManager      manager
 	controllersManager manager
 	actorsManager      manager
@@ -48,13 +49,21 @@ type Server struct {
 	bodiesSynchronizer
 }
 
-type client struct {
+// Client - клиент
+type Client struct {
 	conn               *websocket.Conn
 	synchronizer       clientSynchronizer
 	exceptSynchronizer exceptSynchronizer
 }
 
-type clients map[string]client
+// SendSystemMessage отправляет системное сообщение
+func (c *Client) SendSystemMessage(v interface{}) {
+	c.synchronizer.sync(message{Type: "system", Data: commandProps{ID: "default", Data: v}})
+}
+
+type clients map[string]Client
+
+type bodiesMap map[*physics.Body]string
 
 type msg struct {
 	id   string
@@ -82,16 +91,16 @@ func (s *Server) Connect(conn *websocket.Conn) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("connect: %s", err)
 	}
-	if s.listener.OnClientConnect != nil {
-		if err := s.listener.OnClientConnect(s, id); err != nil {
-			return "", fmt.Errorf("connect: %s", err)
-		}
-	}
-	c := client{conn: conn}
-	c.synchronizer = clientSynchronizer{client: &c}
+	c := Client{conn: conn}
+	c.synchronizer = clientSynchronizer{Client: &c}
 	c.exceptSynchronizer = exceptSynchronizer{
 		broadcastSynchronizer: s.broadcastSynchronizer,
 		exceptID:              id,
+	}
+	if s.listener.OnClientConnect != nil {
+		if err := s.listener.OnClientConnect(s, id, &c); err != nil {
+			return "", fmt.Errorf("connect: %s", err)
+		}
 	}
 	s.clients[id] = c
 	s.sync(c)
@@ -114,12 +123,23 @@ func (s *Server) DestroyEntity(id string) {
 		s.controllersManager.destroy(id)
 		s.simulator.remove(controller)
 	}
-	s.bodiesManager.destroy(id)
-	if item, ok := s.bodiesManager.store[id]; ok {
-		if body, ok := item.result.(*physics.Body); ok {
-			s.world.DestroyBody(body)
-		}
+	if body, ok := s.bodiesManager.get(id).(*physics.Body); ok {
+		delete(s.bodiesMap, body)
+		s.world.DestroyBody(body)
 	}
+	s.bodiesManager.destroy(id)
+}
+
+// DestroyBody уничтожает тело и все соответствующие ему сущности
+func (s *Server) DestroyBody(body *physics.Body) {
+	if id, ok := s.bodiesMap[body]; ok {
+		s.DestroyEntity(id)
+	}
+}
+
+// DestroyContact уничтожает контакт
+func (s *Server) DestroyContact(contact *dynamic.Contact) {
+	s.world.GetContactManager().Destroy(contact)
 }
 
 // Disconnect отключает клиента с идентификатором id
@@ -163,7 +183,7 @@ func (s *Server) SetListener(listener ServerListener) {
 	s.listener = listener
 }
 
-func (s *Server) client(c client, id string, ch chan<- msg) {
+func (s *Server) client(c Client, id string, ch chan<- msg) {
 	defer s.Disconnect(id)
 	for {
 		var data interface{}
@@ -258,6 +278,7 @@ func (s *Server) onSync() {
 
 func (s *Server) createActorController(id string, t string, props interface{}) (Actor, Controller, bool) {
 	if body, ok := s.bodiesManager.create(id, t, props).(*physics.Body); ok {
+		s.bodiesMap[body] = id
 		if controller, ok := s.controllersManager.create(id, t, nil).(Controller); ok {
 			s.simulator.add(body, controller)
 			if actor, ok := s.actorsManager.create(id, t, nil).(Actor); ok {
@@ -275,7 +296,7 @@ func (s *Server) createActorControllerSilent(id string, t string, props interfac
 	return a, c, ok
 }
 
-func (s *Server) sync(c client) {
+func (s *Server) sync(c Client) {
 	s.synchronizer.with(c.synchronizer, func() {
 		s.bodiesManager.sync()
 		s.controllersManager.sync()
@@ -336,10 +357,11 @@ func (s *Server) stop() {
 }
 
 func (s *Server) reset() {
-	s.clients = make(map[string]client)
+	s.clients = make(map[string]Client)
 	s.ch = make(chan msg)
 	s.running = true
 	s.world = dynamic.CreateWorld()
+	s.bodiesMap = make(bodiesMap)
 	s.broadcastSynchronizer = broadcastSynchronizer{client: &s.clients}
 	s.synchronizer = contextSynchronizer{synchronizer: s.broadcastSynchronizer}
 	s.eventSynchronizer = eventSynchronizer{parent: &s.synchronizer}

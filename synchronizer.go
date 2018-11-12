@@ -26,7 +26,7 @@ func (s *contextSynchronizer) with(sc synchronizer, f func()) {
 }
 
 type clientSynchronizer struct {
-	*client
+	*Client
 }
 
 func (s clientSynchronizer) sync(v interface{}) {
