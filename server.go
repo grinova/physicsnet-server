@@ -27,10 +27,16 @@ type ServerListener struct {
 	OnSystemMessage    func(s *Server, id string, data interface{}) bool
 }
 
+// ServerProps - свойства сервера
+type ServerProps struct {
+	Synchronization bool
+	NewID           func() (string, error)
+}
+
 // Server - сервер физики
 type Server struct {
+	Props ServerProps
 	sync.RWMutex
-	Synchronization    bool
 	clients            clients
 	running            bool
 	ch                 chan msg
@@ -73,7 +79,10 @@ func (s *Server) Close() {
 func (s *Server) Connect(conn *websocket.Conn) (string, error) {
 	defer s.Unlock()
 	s.Lock()
-	id, err := s.genNewID()
+	if s.Props.NewID == nil {
+		s.Props.NewID = createIDGenerator()
+	}
+	id, err := s.Props.NewID()
 	if err != nil {
 		return "", fmt.Errorf("connect: %s", err)
 	}
@@ -194,24 +203,6 @@ func (s *Server) disconnect(id string) {
 	}
 }
 
-func (s *Server) genNewID() (string, error) {
-	// TODO: Вынести генерацию идентификаторов наружу библиотеки
-	for i := 'a'; i < 'z'; i++ {
-		id := "ship-" + string(i)
-		exist := false
-		for shipID := range s.clients {
-			if id == shipID {
-				exist = true
-				break
-			}
-		}
-		if !exist {
-			return id, nil
-		}
-	}
-	return "", fmt.Errorf("genNewID: can't generate new id")
-}
-
 func (s *Server) onMessage(m msg) bool {
 	defer s.RUnlock()
 	s.RLock()
@@ -258,7 +249,7 @@ func (s *Server) onStep(d time.Duration) {
 }
 
 func (s *Server) onSync() {
-	if s.Synchronization {
+	if s.Props.Synchronization {
 		s.bodies.sync()
 	}
 }
