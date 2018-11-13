@@ -4,13 +4,25 @@ import (
 	actrs "github.com/grinova/actors"
 )
 
+// ActorID - идентификатор актора
+type ActorID = actrs.ActorID
+
+// Message - сообщение
+type Message = actrs.Message
+
 // Spawn - функция создания актора
-type Spawn func(t string, props interface{}) (actrs.ActorID, bool)
+type Spawn func(t string, props interface{}) (ActorID, bool)
+
+// Send - функция отправки сообщения
+type Send actrs.Send
+
+// Exit - функция завершения актора и отправка последнего сообщения
+type Exit = actrs.Exit
 
 // Actor - актор
 type Actor interface {
-	OnInit(controller Controller, selfID actrs.ActorID, send actrs.Send, spawn Spawn, exit actrs.Exit)
-	OnMessage(controller Controller, message actrs.Message, send actrs.Send, spawn Spawn, exit actrs.Exit)
+	OnInit(controller Controller, selfID ActorID, send Send, spawn Spawn, exit Exit)
+	OnMessage(controller Controller, message Message, send Send, spawn Spawn, exit Exit)
 }
 
 type actorOwner struct {
