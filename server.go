@@ -29,14 +29,14 @@ type ServerListener struct {
 
 // Server - сервер физики
 type Server struct {
-	Synchronization bool
 	sync.RWMutex
+	Synchronization    bool
 	clients            clients
 	running            bool
 	ch                 chan msg
 	listener           ServerListener
 	world              dynamic.World
-	bodiesMap          bodiesMap
+	bodiesIDs          map[*physics.Body]string
 	bodiesManager      manager
 	controllersManager manager
 	actorsManager      manager
@@ -49,24 +49,7 @@ type Server struct {
 	bodies             *bodies
 }
 
-// Client - клиент
-type Client struct {
-	conn   *websocket.Conn
-	except *except
-}
-
-// SendSystemMessage отправляет системное сообщение
-func (c *Client) SendSystemMessage(v interface{}) {
-	c.sync(message{Type: "system", Data: route{ID: "default", Data: v}})
-}
-
-func (c *Client) sync(v interface{}) {
-	c.conn.WriteJSON(v)
-}
-
 type clients map[string]*Client
-
-type bodiesMap map[*physics.Body]string
 
 type msg struct {
 	id   string
@@ -94,19 +77,21 @@ func (s *Server) Connect(conn *websocket.Conn) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("connect: %s", err)
 	}
-	c := &Client{conn: conn}
-	c.except = &except{
-		broadcast: s.broadcast,
-		exceptID:  id,
+	client := &Client{
+		conn: conn,
+		except: &except{
+			broadcast: s.broadcast,
+			exceptID:  id,
+		},
 	}
 	if s.listener.OnClientConnect != nil {
-		if err := s.listener.OnClientConnect(s, id, c); err != nil {
+		if err := s.listener.OnClientConnect(s, id, client); err != nil {
 			return "", fmt.Errorf("connect: %s", err)
 		}
 	}
-	s.clients[id] = c
-	s.sync(c)
-	go s.client(c, id, s.ch)
+	s.clients[id] = client
+	s.sync(client)
+	go s.client(client, id, s.ch)
 	return id, nil
 }
 
@@ -122,11 +107,11 @@ func (s *Server) CreateEntity(id string, t string, bodyCreateProps interface{}) 
 func (s *Server) DestroyEntity(id string) {
 	s.actorsManager.Destroy(id)
 	if controller, ok := s.controllersManager.get(id).(Controller); ok {
-		s.controllersManager.Destroy(id)
 		s.simulator.remove(controller)
+		s.controllersManager.Destroy(id)
 	}
 	if body, ok := s.bodiesManager.get(id).(*physics.Body); ok {
-		delete(s.bodiesMap, body)
+		delete(s.bodiesIDs, body)
 		s.world.DestroyBody(body)
 	}
 	s.bodiesManager.Destroy(id)
@@ -134,7 +119,7 @@ func (s *Server) DestroyEntity(id string) {
 
 // DestroyBody уничтожает тело и все соответствующие ему сущности
 func (s *Server) DestroyBody(body *physics.Body) {
-	if id, ok := s.bodiesMap[body]; ok {
+	if id, ok := s.bodiesIDs[body]; ok {
 		s.DestroyEntity(id)
 	}
 }
@@ -253,8 +238,8 @@ func (s *Server) onEvent(id string, data interface{}) bool {
 		if id, ok := data["id"].(string); ok {
 			s.actors.Send(id, data["data"])
 		}
-		if c, ok := s.clients[id]; ok {
-			s.context.with(c.except, func() {
+		if client, ok := s.clients[id]; ok {
+			s.context.with(client.except, func() {
 				s.event.sync(data)
 			})
 		}
@@ -280,7 +265,7 @@ func (s *Server) onSync() {
 
 func (s *Server) createActorController(id string, t string, props interface{}) (Actor, Controller, bool) {
 	if body, ok := s.bodiesManager.Create(id, t, props).(*physics.Body); ok {
-		s.bodiesMap[body] = id
+		s.bodiesIDs[body] = id
 		if controller, ok := s.controllersManager.Create(id, t, nil).(Controller); ok {
 			s.simulator.add(body, controller)
 			if actor, ok := s.actorsManager.Create(id, t, nil).(Actor); ok {
@@ -298,8 +283,8 @@ func (s *Server) createActorControllerSilent(id string, t string, props interfac
 	return a, c, ok
 }
 
-func (s *Server) sync(c *Client) {
-	s.context.with(c, func() {
+func (s *Server) sync(client *Client) {
+	s.context.with(client, func() {
 		s.bodiesManager.sync()
 		s.controllersManager.sync()
 		s.actorsManager.sync()
@@ -363,7 +348,7 @@ func (s *Server) reset() {
 	s.ch = make(chan msg)
 	s.running = true
 	s.world = dynamic.CreateWorld()
-	s.bodiesMap = make(bodiesMap)
+	s.bodiesIDs = make(map[*physics.Body]string)
 	s.broadcast = &broadcast{clients: s.clients}
 	s.context = &context{context: s.broadcast}
 	s.event = &event{parent: s.context}
@@ -373,6 +358,5 @@ func (s *Server) reset() {
 	s.actorsManager = createManager(&entities{id: "actors", parent: manage})
 	s.actors = createActors(&s.idGenerator, s.createActorControllerSilent)
 	s.simulator = createSimulator()
-	ss := &synchronize{parent: s.broadcast}
-	s.bodies = &bodies{parent: ss, manager: &s.bodiesManager}
+	s.bodies = &bodies{parent: &synchronize{parent: s.broadcast}, manager: &s.bodiesManager}
 }
