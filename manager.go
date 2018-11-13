@@ -9,34 +9,34 @@ type managerItem struct {
 type manager struct {
 	factory
 	store map[string]managerItem
-	createSynchronizer
-	destroySynchronizer
+	create
+	destroy
 }
 
-func createManager(es entitiesSynchronizer) manager {
+func createManager(es *entities) manager {
 	return manager{
-		store:               make(map[string]managerItem),
-		factory:             factory{Registrator: make(Registrator)},
-		createSynchronizer:  createSynchronizer{parent: es},
-		destroySynchronizer: destroySynchronizer{parent: es},
+		store:   make(map[string]managerItem),
+		factory: factory{Registrator: make(Registrator)},
+		create:  create{parent: es},
+		destroy: destroy{parent: es},
 	}
 }
 
-func (m *manager) create(id string, t string, data interface{}) interface{} {
+func (m *manager) Create(id string, t string, data interface{}) interface{} {
 	result := m.factory.create(t, data)
 	if result != nil {
 		props := createProps{ID: id, Type: t, Data: data}
 		item := managerItem{t: t, props: props, result: result}
 		m.store[id] = item
-		m.createSynchronizer.sync(item.props)
+		m.create.sync(props)
 	}
 	return result
 }
 
-func (m *manager) destroy(id string) {
+func (m *manager) Destroy(id string) {
 	delete(m.store, id)
 	props := destroyProps{ID: id}
-	m.destroySynchronizer.sync(props)
+	m.destroy.sync(props)
 }
 
 func (m *manager) get(id string) interface{} {
@@ -48,6 +48,6 @@ func (m *manager) get(id string) interface{} {
 
 func (m *manager) sync() {
 	for _, item := range m.store {
-		m.createSynchronizer.sync(item.props)
+		m.create.sync(item.props)
 	}
 }

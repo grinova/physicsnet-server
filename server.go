@@ -31,7 +31,7 @@ type ServerListener struct {
 type Server struct {
 	Synchronization bool
 	sync.RWMutex
-	clients
+	clients            clients
 	running            bool
 	ch                 chan msg
 	listener           ServerListener
@@ -41,27 +41,30 @@ type Server struct {
 	controllersManager manager
 	actorsManager      manager
 	actors             actors
-	synchronizer       contextSynchronizer
 	idGenerator        customIDGenerator
-	simulator
-	broadcastSynchronizer broadcastSynchronizer
-	eventSynchronizer     eventSynchronizer
-	bodiesSynchronizer
+	simulator          simulator
+	context            *context
+	broadcast          *broadcast
+	event              *event
+	bodies             *bodies
 }
 
 // Client - клиент
 type Client struct {
-	conn               *websocket.Conn
-	synchronizer       clientSynchronizer
-	exceptSynchronizer exceptSynchronizer
+	conn   *websocket.Conn
+	except *except
 }
 
 // SendSystemMessage отправляет системное сообщение
 func (c *Client) SendSystemMessage(v interface{}) {
-	c.synchronizer.sync(message{Type: "system", Data: commandProps{ID: "default", Data: v}})
+	c.sync(message{Type: "system", Data: route{ID: "default", Data: v}})
 }
 
-type clients map[string]Client
+func (c *Client) sync(v interface{}) {
+	c.conn.WriteJSON(v)
+}
+
+type clients map[string]*Client
 
 type bodiesMap map[*physics.Body]string
 
@@ -91,14 +94,13 @@ func (s *Server) Connect(conn *websocket.Conn) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("connect: %s", err)
 	}
-	c := Client{conn: conn}
-	c.synchronizer = clientSynchronizer{Client: &c}
-	c.exceptSynchronizer = exceptSynchronizer{
-		broadcastSynchronizer: s.broadcastSynchronizer,
-		exceptID:              id,
+	c := &Client{conn: conn}
+	c.except = &except{
+		broadcast: s.broadcast,
+		exceptID:  id,
 	}
 	if s.listener.OnClientConnect != nil {
-		if err := s.listener.OnClientConnect(s, id, &c); err != nil {
+		if err := s.listener.OnClientConnect(s, id, c); err != nil {
 			return "", fmt.Errorf("connect: %s", err)
 		}
 	}
@@ -118,16 +120,16 @@ func (s *Server) CreateEntity(id string, t string, bodyCreateProps interface{}) 
 
 // DestroyEntity уничтожает все сущности с идентификатором id
 func (s *Server) DestroyEntity(id string) {
-	s.actorsManager.destroy(id)
+	s.actorsManager.Destroy(id)
 	if controller, ok := s.controllersManager.get(id).(Controller); ok {
-		s.controllersManager.destroy(id)
+		s.controllersManager.Destroy(id)
 		s.simulator.remove(controller)
 	}
 	if body, ok := s.bodiesManager.get(id).(*physics.Body); ok {
 		delete(s.bodiesMap, body)
 		s.world.DestroyBody(body)
 	}
-	s.bodiesManager.destroy(id)
+	s.bodiesManager.Destroy(id)
 }
 
 // DestroyBody уничтожает тело и все соответствующие ему сущности
@@ -183,7 +185,7 @@ func (s *Server) SetListener(listener ServerListener) {
 	s.listener = listener
 }
 
-func (s *Server) client(c Client, id string, ch chan<- msg) {
+func (s *Server) client(c *Client, id string, ch chan<- msg) {
 	defer s.Disconnect(id)
 	for {
 		var data interface{}
@@ -252,8 +254,8 @@ func (s *Server) onEvent(id string, data interface{}) bool {
 			s.actors.Send(id, data["data"])
 		}
 		if c, ok := s.clients[id]; ok {
-			s.synchronizer.with(c.exceptSynchronizer, func() {
-				s.eventSynchronizer.sync(data)
+			s.context.with(c.except, func() {
+				s.event.sync(data)
 			})
 		}
 	}
@@ -272,16 +274,16 @@ func (s *Server) onStep(d time.Duration) {
 
 func (s *Server) onSync() {
 	if s.Synchronization {
-		s.bodiesSynchronizer.sync()
+		s.bodies.sync()
 	}
 }
 
 func (s *Server) createActorController(id string, t string, props interface{}) (Actor, Controller, bool) {
-	if body, ok := s.bodiesManager.create(id, t, props).(*physics.Body); ok {
+	if body, ok := s.bodiesManager.Create(id, t, props).(*physics.Body); ok {
 		s.bodiesMap[body] = id
-		if controller, ok := s.controllersManager.create(id, t, nil).(Controller); ok {
+		if controller, ok := s.controllersManager.Create(id, t, nil).(Controller); ok {
 			s.simulator.add(body, controller)
-			if actor, ok := s.actorsManager.create(id, t, nil).(Actor); ok {
+			if actor, ok := s.actorsManager.Create(id, t, nil).(Actor); ok {
 				return actor, controller, true
 			}
 		}
@@ -290,14 +292,14 @@ func (s *Server) createActorController(id string, t string, props interface{}) (
 }
 
 func (s *Server) createActorControllerSilent(id string, t string, props interface{}) (a Actor, c Controller, ok bool) {
-	s.synchronizer.with(nil, func() {
+	s.context.with(nil, func() {
 		a, c, ok = s.createActorController(id, t, props)
 	})
 	return a, c, ok
 }
 
-func (s *Server) sync(c Client) {
-	s.synchronizer.with(c.synchronizer, func() {
+func (s *Server) sync(c *Client) {
+	s.context.with(c, func() {
 		s.bodiesManager.sync()
 		s.controllersManager.sync()
 		s.actorsManager.sync()
@@ -357,20 +359,20 @@ func (s *Server) stop() {
 }
 
 func (s *Server) reset() {
-	s.clients = make(map[string]Client)
+	s.clients = make(clients)
 	s.ch = make(chan msg)
 	s.running = true
 	s.world = dynamic.CreateWorld()
 	s.bodiesMap = make(bodiesMap)
-	s.broadcastSynchronizer = broadcastSynchronizer{client: &s.clients}
-	s.synchronizer = contextSynchronizer{synchronizer: s.broadcastSynchronizer}
-	s.eventSynchronizer = eventSynchronizer{parent: &s.synchronizer}
-	manageSynchronizer := manageSynchronizer{parent: &s.synchronizer}
-	s.bodiesManager = createManager(entitiesSynchronizer{id: "bodies", parent: manageSynchronizer})
-	s.controllersManager = createManager(entitiesSynchronizer{id: "controllers", parent: manageSynchronizer})
-	s.actorsManager = createManager(entitiesSynchronizer{id: "actors", parent: manageSynchronizer})
+	s.broadcast = &broadcast{clients: s.clients}
+	s.context = &context{context: s.broadcast}
+	s.event = &event{parent: s.context}
+	manage := &manage{parent: s.context}
+	s.bodiesManager = createManager(&entities{id: "bodies", parent: manage})
+	s.controllersManager = createManager(&entities{id: "controllers", parent: manage})
+	s.actorsManager = createManager(&entities{id: "actors", parent: manage})
 	s.actors = createActors(&s.idGenerator, s.createActorControllerSilent)
 	s.simulator = createSimulator()
-	ss := syncSynchronizer{parent: s.broadcastSynchronizer}
-	s.bodiesSynchronizer = bodiesSynchronizer{parent: ss, manager: &s.bodiesManager}
+	ss := &synchronize{parent: s.broadcast}
+	s.bodies = &bodies{parent: ss, manager: &s.bodiesManager}
 }

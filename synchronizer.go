@@ -6,105 +6,95 @@ type synchronizer interface {
 	sync(v interface{})
 }
 
-type contextSynchronizer struct {
-	synchronizer
+type context struct {
+	context synchronizer
 }
 
-func (s *contextSynchronizer) sync(v interface{}) {
-	if s.synchronizer != nil {
-		s.synchronizer.sync(v)
+func (s *context) sync(v interface{}) {
+	if s.context != nil {
+		s.context.sync(v)
 	}
 }
 
-func (s *contextSynchronizer) with(sc synchronizer, f func()) {
+func (s *context) with(context synchronizer, f func()) {
 	if f != nil {
-		backupSynchronizer := s.synchronizer
-		s.synchronizer = sc
+		backup := s.context
+		s.context = context
 		f()
-		s.synchronizer = backupSynchronizer
+		s.context = backup
 	}
 }
 
-type clientSynchronizer struct {
-	*Client
+type broadcast struct {
+	clients
 }
 
-func (s clientSynchronizer) sync(v interface{}) {
-	s.conn.WriteJSON(v)
-}
-
-type broadcastSynchronizer struct {
-	client *clients
-}
-
-func (s broadcastSynchronizer) sync(v interface{}) {
-	for _, client := range *s.client {
-		client.conn.WriteJSON(v)
+func (s *broadcast) sync(v interface{}) {
+	for _, client := range s.clients {
+		client.sync(v)
 	}
 }
 
-type exceptSynchronizer struct {
-	broadcastSynchronizer
+type except struct {
+	*broadcast
 	exceptID string
 }
 
-func (s exceptSynchronizer) sync(v interface{}) {
-	for id, client := range *s.client {
+func (s *except) sync(v interface{}) {
+	for id, client := range s.clients {
 		if id != s.exceptID {
-			client.conn.WriteJSON(v)
+			client.sync(v)
 		}
 	}
 }
 
-type manageSynchronizer struct {
+type manage struct {
 	parent synchronizer
 }
 
-func (s manageSynchronizer) sync(v interface{}) {
-	if s.parent != nil {
-		s.parent.sync(message{Type: "manage", Data: v})
-	}
+func (s *manage) sync(v interface{}) {
+	s.parent.sync(message{Type: "manage", Data: v})
 }
 
-type entitiesSynchronizer struct {
+type entities struct {
 	id     string
-	parent manageSynchronizer
+	parent *manage
 }
 
-func (s entitiesSynchronizer) sync(v interface{}) {
-	s.parent.sync(commandProps{ID: s.id, Data: v})
+func (s *entities) sync(v interface{}) {
+	s.parent.sync(route{ID: s.id, Data: v})
 }
 
-type createSynchronizer struct {
-	parent entitiesSynchronizer
+type create struct {
+	parent *entities
 }
 
-func (s createSynchronizer) sync(v interface{}) {
+func (s *create) sync(v interface{}) {
 	s.parent.sync(entityRoute{Type: "create", Data: v})
 }
 
-type destroySynchronizer struct {
-	parent entitiesSynchronizer
+type destroy struct {
+	parent *entities
 }
 
-func (s destroySynchronizer) sync(v interface{}) {
+func (s *destroy) sync(v interface{}) {
 	s.parent.sync(entityRoute{Type: "destroy", Data: v})
 }
 
-type syncSynchronizer struct {
-	parent broadcastSynchronizer
+type synchronize struct {
+	parent *broadcast
 }
 
-func (s syncSynchronizer) sync(v interface{}) {
+func (s *synchronize) sync(v interface{}) {
 	s.parent.sync(message{Type: "sync", Data: v})
 }
 
-type bodiesSynchronizer struct {
-	parent  syncSynchronizer
+type bodies struct {
+	parent  *synchronize
 	manager *manager
 }
 
-func (s bodiesSynchronizer) sync() {
+func (s *bodies) sync() {
 	bodiesSync := make(bodiesSync)
 	for id, item := range s.manager.store {
 		if body, ok := item.result.(*physics.Body); ok {
@@ -119,13 +109,13 @@ func (s bodiesSynchronizer) sync() {
 			bodiesSync[id] = props
 		}
 	}
-	s.parent.sync(syncProps{ID: "default", Data: bodiesSync})
+	s.parent.sync(route{ID: "default", Data: bodiesSync})
 }
 
-type eventSynchronizer struct {
+type event struct {
 	parent synchronizer
 }
 
-func (s eventSynchronizer) sync(v interface{}) {
+func (s *event) sync(v interface{}) {
 	s.parent.sync(message{Type: "event", Data: v})
 }
