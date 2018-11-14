@@ -26,17 +26,28 @@ type Actor interface {
 }
 
 type actorOwner struct {
-	actor      Actor
-	controller Controller
-	spawn      Spawn
+	actor                 Actor
+	controller            Controller
+	createActorController createActorController
 }
 
 func (ao *actorOwner) OnInit(selfID actrs.ActorID, send actrs.Send, spawn actrs.Spawn, exit actrs.Exit) {
-	ao.actor.OnInit(ao.controller, selfID, send, ao.spawn, exit)
+	ao.actor.OnInit(ao.controller, selfID, send, ao.wrapSpawnFunc(spawn), exit)
 }
 
 func (ao *actorOwner) OnMessage(message actrs.Message, send actrs.Send, spawn actrs.Spawn, exit actrs.Exit) {
-	ao.actor.OnMessage(ao.controller, message, send, ao.spawn, exit)
+	ao.actor.OnMessage(ao.controller, message, send, ao.wrapSpawnFunc(spawn), exit)
+}
+
+func (ao *actorOwner) wrapSpawnFunc(spawn actrs.Spawn) Spawn {
+	return func(t string, props interface{}) (ActorID, bool) {
+		return spawn(func(id actrs.ActorID) (actrs.Actor, bool) {
+			if a, c, ok := ao.createActorController(id, t, props); ok {
+				return &actorOwner{actor: a, controller: c, createActorController: ao.createActorController}, true
+			}
+			return nil, false
+		})
+	}
 }
 
 type createActorController func(id string, t string, bodyCreateProps interface{}) (Actor, Controller, bool)
@@ -54,22 +65,9 @@ func createActors(idGenerator actrs.IDGenerator, createActorController createAct
 func (a *actors) spawn(controller Controller, actor Actor) (actrs.ActorID, bool) {
 	return a.Spawn(func(id actrs.ActorID) (actrs.Actor, bool) {
 		return &actorOwner{
-			actor:      actor,
-			controller: controller,
-			spawn:      a.spawnActor,
+			actor:                 actor,
+			controller:            controller,
+			createActorController: a.createActorController,
 		}, true
-	})
-}
-
-func (a *actors) spawnActor(t string, props interface{}) (actrs.ActorID, bool) {
-	return a.Spawn(func(id actrs.ActorID) (actrs.Actor, bool) {
-		if actor, controller, ok := a.createActorController(id, t, props); ok {
-			return &actorOwner{
-				actor:      actor,
-				controller: controller,
-				spawn:      a.spawnActor,
-			}, true
-		}
-		return nil, false
 	})
 }
