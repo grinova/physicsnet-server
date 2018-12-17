@@ -145,6 +145,11 @@ func (s *Server) Disconnect(id string) {
 	s.disconnect(id)
 }
 
+// GetClient возвращает клиента по идентиикатору
+func (s *Server) GetClient(id string) *Client {
+	return s.clients[id]
+}
+
 // GetBodyRegistrator возвращает регистратор для тел
 func (s *Server) GetBodyRegistrator() Registrator {
 	return s.bodiesManager.factory.Registrator
