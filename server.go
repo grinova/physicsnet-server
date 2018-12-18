@@ -145,6 +145,14 @@ func (s *Server) Disconnect(id string) {
 	s.disconnect(id)
 }
 
+// GetBody возвращает тело по идентификатору
+func (s *Server) GetBody(id string) *physics.Body {
+	if body, ok := s.bodiesManager.get(id).(*physics.Body); ok {
+		return body
+	}
+	return nil
+}
+
 // GetClient возвращает клиента по идентиикатору
 func (s *Server) GetClient(id string) *Client {
 	return s.clients[id]

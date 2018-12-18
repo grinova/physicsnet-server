@@ -27,9 +27,11 @@ type destroyProps struct {
 
 // BodyCreateProps - свойства тела
 type BodyCreateProps struct {
-	ID       string  `json:"id"`
-	Position Point   `json:"position"`
-	Angle    float64 `json:"angle"`
+	ID              string  `json:"id"`
+	Position        Point   `json:"position"`
+	Angle           float64 `json:"angle"`
+	LinearVelocity  Point   `json:"linearVelocity"`
+	AngularVelocity float64 `json:"angularVelocity"`
 }
 
 // Point - точка
